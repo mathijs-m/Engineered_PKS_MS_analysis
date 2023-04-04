@@ -4,12 +4,12 @@ The script uses the pyteomics package to achieve this
 '''
 
 import numpy as np
+import pandas as pd
 from pyteomics import mzxml, auxiliary
 from pathlib import Path
-#import originpro as op
 from matplotlib import pyplot as plt
 from matplotlib.ticker import FormatStrFormatter, ScalarFormatter
-from matplotlib import rc
+import cmocean
 import argparse
 import multiprocessing as mp
 
@@ -23,17 +23,19 @@ def get_mzxml_files(folder):
             files.append(file)
     return files
 
-def extract_eic_for_mass(mzxml_object, mass_list, accuracy = 5e-6):
+def extract_eic_for_mass(mzxml_object, mass_list, accuracy = 10e-6, cutoff=1e3):
     '''
     This function extracts the EICs for a list of masses from a mzXML object
     :param mzxml_object:   The mzXML object from pyteomics
     :param mass_list:   A list of masses for which the EICs should be extracted
     :param accuracy:    The accuracy in ppm for which the EICs should be extracted
+    :param cutoff:  The minimum intensity for which the EICs should be extracted
     :return:    A dictionary with the masses as keys and the EICs as values
     '''
     max_id = int(mzxml_object.time[1e3]['num'])
     spectra = [mzxml_object.get_by_id(str(id)) for id in range(1, max_id)]
     eics = dict()
+    mass_list = set(adduct_mass for compound in mass_list for isomer in mass_list[compound] for adduct_mass in isomer)
     for mass in mass_list:
         eics[mass] = np.zeros((2,max_id-1), dtype=np.float32)
 
@@ -43,119 +45,100 @@ def extract_eic_for_mass(mzxml_object, mass_list, accuracy = 5e-6):
         for peak_id, experimental_mass in enumerate(spectrum['m/z array']):
             for mass in mass_list:
                 eics[mass][0, spectrum_id] = spectrum['retentionTime']
-                if abs(experimental_mass-mass) < accuracy*experimental_mass:
+                if mass > cutoff and abs(experimental_mass-mass) < accuracy*experimental_mass:
                     eics[mass][1, spectrum_id] = spectrum['intensity array'][peak_id]
     return eics
 
 
-def write_origin_file(masses, eics, subfolder):
+def format_func(value):
     '''
-    This function writes an Origin file in which the EICs are plotted in a single plot
-    :param masses:  A list of masses for which the EICs should be plotted
-    :param eics:    A dictionary with the masses as keys and the EICs as values
-    :param subfolder:   The subfolder in which the Origin file should be saved
+    This function formats the y-axis of the EICs to scientific notation in nice LaTeX
+    :param value:   The value to be formatted
+    :param tick_number: The tick number
+    :return:    The formatted value
+    '''
+    if value == 0:
+        return '0'
+    return r'${:.1f} \cdot 10^{{{}}}$'.format(value / 10 ** int(np.log10(abs(value))), int(np.log10(abs(value))))
+
+
+def plot_compound(sample_data, subfolder, stack_plot=False):
+    '''
+    This function plots the EICs for a compound
+    :param sample_data: The dictionary of dataframes with data for the sample
+    :param subfolder:   The subfolder in which the plots should be saved
+    :param stack_plot:  Whether the EICs should be stacked or not
     :return:    None
     '''
-    import sys
-    def origin_shutdown_exception_hook(exctype, value, traceback):
-        '''Ensures Origin gets shut down if an uncaught exception'''
-        op.exit()
-        sys.__excepthook__(exctype, value, traceback)
+    colors = cmocean.cm.haline(np.linspace(0, 0.9, 6))
 
-    if op and op.oext:
-        sys.excepthook = origin_shutdown_exception_hook
-
-    # Set Origin instance visibility.
-    if op.oext:
-        op.set_show(True)
-
-
-
-    origin = op
-    origin.new_page()
-    for mass_id, mass in enumerate(masses):
-        wks = op.new_sheet(type='w', lname=str(mass))
-        wks.from_list(0, [t[0] for t in mass], lname='Retention time')
-        wks.from_list(1, [t[1] for t in mass], lname='Intensity')
-        graph = op.new_graph(lname=str(mass))
-        graph_layer_1 = graph[0]
-        plot_1 = graph_layer_1.add_plot(wks, coly='B', colx='A', type=200)  # X is col A, Y is col B. 202 is Line + Symbol.
-        plot_1.color = '#335eff'
-        graph_layer_1.rescale()
-
-        origin.plot(eics[mass][0], eics[mass][1], name='m/z = {}'.format(mass))
-        # And also make a nice graph
-        origin.graph(name='m/z = {}'.format(mass), x_label='Retention time', y_label='Intensity')
-        # Set the the x-ticks to every 2 minutes.
-        origin.set_ticks(x_ticks=2 * 60)
-        # Set the y-range such that there is a 5% offset between the axes and the data
-        origin.set_range(y_range=[1.05 * np.max(eics[mass][1]), 1.05 * np.max(eics[mass][1])])
-        # Set the y-ticks to the nearest whole number of that order of magnitude
-        origin.set_ticks(y_ticks=10 ** np.floor(np.log10(np.max(eics[mass][1]))))
-        # Set the plot size to 8x9 inches
-        origin.set_size(size=[8, 9])
-        # Set the font size to 12
-        origin.set_font(font_size=12)
-        # Set the line width to 2
-        origin.set_line(line_width=2)
-        # Set the line color to navy blue
-        origin.set_line(line_color='navy blue')
-        # Set the line style to solid
-        origin.set_line(line_style='solid')
-
-    # Save the Origin file
-    origin.save(subfolder / subfolder.name + '.opj')
-
-
-def plot(eics, masses, subfolder, time_range, filename, stack_plot=False):
-    '''
-    This function plots the EICs in a single plot with matplotlib
-    :param eics:    A dictionary with the masses as keys and the EICs as values
-    :param masses:  A list of masses for which the EICs should be plotted
-    :param subfolder:   The subfolder in which the Origin file should be saved
-    :param time_range:  The time range in which the EICs should be plotted
-    :param stack_plot:  Whether the EICs should be plotted in a stack plot
-    :return:    None
-    '''
-
-    def format_func(value, tick_number):
-        if value == 0:
-            return '0'
-        return r'${:.1f} \cdot 10^{{{}}}$'.format(value / 10 ** int(np.log10(abs(value))), int(np.log10(abs(value))))
-
-    fig, axs = plt.subplots(len(masses), 1, figsize=(8, 9), squeeze=False, sharex=True)
-    for mass_id, mass in enumerate(masses):
+    fig, axs = plt.subplots(len(sample_data), 1, figsize=(16, 18), squeeze=False, sharex=True)
+    for compound_id, compound in enumerate(sample_data):
         if stack_plot:
-            mass_id = 0
-        axs[mass_id][0].plot(eics[mass][0], eics[mass][1])
+            plot_num = compound_id
+        for isomer_id, isomer in enumerate(sample_data[compound]):
+            if isomer == 'Retention time':
+                continue
+            # Plot the normalized EICs
+            axs[plot_num][0].plot(sample_data[compound]['Retention time'], sample_data[compound][isomer]/np.max(sample_data[compound][isomer]), color=colors[isomer_id-1], label=isomer)
+            # Set the line-width to 0.75
+            axs[plot_num][0].lines[-1].set_linewidth(0.75)
 
-        # Label the axes with time and intensity
-        axs[mass_id][0].set_xlabel('Time (min)', fontsize=14)
-        axs[mass_id][0].set_ylabel('Intensity', fontsize=14)
-        axs[mass_id][0].set_xlim(time_range)
-        # Set y-label to scientific notation
-        axs[mass_id][0].yaxis.set_major_formatter(plt.FuncFormatter(format_func))
-        # axs[mass_id][0].xaxis.get_major_formatter()._usetex = False
-        # Set the the x-ticks to every 2 minutes.
-        axs[mass_id][0].set_xticks(np.arange(0, np.max(eics[mass][0]), 2))
+        # Label the axes with time and intensity. Also only label the x-axis of the bottom plot
+        if compound_id == len(sample_data)-1:
+            axs[plot_num][0].set_xlabel('Time (min)', fontsize=10)
+            axs[plot_num][0].tick_params(axis='x', which='both', bottom=True, top=False, labelbottom=True)
+            axs[plot_num][0].xaxis.set_major_formatter(FormatStrFormatter('%g'))
+            # Set the x-ticks to every 2 minutes.
+            axs[plot_num][0].set_xticks(np.arange(0, np.max(sample_data[compound]['Retention time']), 0.5))
+            # Set the x-range to be between 4 and 8 minutes
+            axs[plot_num][0].set_xlim(4, 8)
+            # Set the y-ticks to be between 0 and 1
+            axs[plot_num][0].set_yticks(np.arange(0, 1.1, 0.5))
+            # Set the y-range to be between 0 and 1.1
+            axs[plot_num][0].set_ylim(0, 1.1)
+        else:
+            axs[plot_num][0].xaxis.set_ticklabels([])
 
-    # Set the y-range such that there is a 5% offset between the axes and the data
+        # Label the middle y-axis of the stacked plot with 'Normalized intensity'
+        if stack_plot:
+            if compound_id%(np.floor(len(sample_data)/2)) == 0 and compound_id not in [0, len(sample_data)-1]:
+                axs[plot_num][0].set_ylabel('Normalized intensity', fontsize=10)
+        # Label the left y-axis of the non-stacked plot with 'Normalized intensity'
+        else:
+            axs[plot_num][0].set_ylabel('Normalized intensity', fontsize=10)
 
+        # Set the title of the compound in the upper left corner of the graph
+        axs[plot_num][0].set_title(' '+compound, fontsize=10, loc='left', pad=-10)
+        # Make a legend string that also mentions the maximum intensity of the EIC
+        legend_strings = [f'{isomer:.4f} - {format_func(np.max(sample_data[compound][isomer]))}'
+                          for isomer in sample_data[compound] if isomer != 'Retention time']
+        # Set the legend on the right side of the graph and have it constrained to the heigth of the graph
+        legend = axs[compound_id][0].legend(legend_strings,loc='center left', bbox_to_anchor=(1, 0.5), ncol=2, frameon=False, fontsize=8)
+        '''
+        # Set the legend title to 'Isomer - Max intensity' and align it to the left for the top legend
+        if compound_id == 0:
+            legend.set_title(f'{"m/z":12}   Max intensity')
+            legend.get_title().set_x(-50)
+        '''
+        # Set the legend title to be in the same font size as the rest of the legend
+        plt.setp(legend.get_title(), fontsize=8)
 
-    plt.savefig(filename)
-    plt.savefig(filename)
+        fig.tight_layout()
+        fig.set_size_inches(8, fig.bbox.height / fig.dpi)
+
+    # Save the figure
+    plt.savefig(subfolder.joinpath(subfolder.name + '.png'), dpi=300, bbox_inches='tight')
     plt.close()
 
-    # Plot the EICs in a single plot with matplotlib
-
-
-def parse_mxzml_file(file, masses, stack_plot=False):
+def parse_mxzml_file(file, masses, accuracy, cutoff,stack_plot=False):
     print('Extracting EICs for file {}'.format(file))
     mzxml_object = mzxml.MzXML(str(file.resolve()))
-    eics = extract_eic_for_mass(mzxml_object, masses)
+    eics = extract_eic_for_mass(mzxml_object, masses, accuracy, cutoff)
     print('...done')
+
     # Make a subfolder for the data from the current file
-    subfolder = file.parent / file.stem
+    subfolder = file.parent / file.stem / 'test'
 
     # Create the subfolder if it does not exist
     if not subfolder.exists():
@@ -163,80 +146,25 @@ def parse_mxzml_file(file, masses, stack_plot=False):
 
     # Save the EICs to a text file
     print('Saving EICs to text files')
-    for mass in masses:
-        np.savetxt(subfolder / f'mz_{mass}.txt', eics[mass].T, delimiter='\t', header='Retention time\tIntensity')
-
-    # Plot the EICs in a single plot with subplots, even if there is only one mass
-    print('Plotting EICs')
-
-    def format_func(value, tick_number):
-        if value == 0:
-            return '0'
-        return r'${:.1f} \cdot 10^{{{}}}$'.format(value / 10 ** int(np.log10(abs(value))), int(np.log10(abs(value))))
-
-    #rc('text', usetex=True)
-    if stack_plot:
-        fig, axs = plt.subplots(len(masses), 1, figsize=(8, 9), squeeze=False, sharex=True)
-        for mass_id, mass in enumerate(masses):
-            axs[mass_id][0].plot(eics[mass][0], eics[mass][1])
-            axs[mass_id][0].set_title(f'{file.stem}: m/z = {mass}')
-
-            # Label the axes with time and intensity
-            axs[mass_id][0].set_xlabel('Time (min)', fontsize = 14)
-            axs[mass_id][0].set_ylabel('Intensity', fontsize = 14)
-            # Set y-label to scientific notation
-            axs[mass_id][0].yaxis.set_major_formatter(plt.FuncFormatter(format_func))
-            # axs[mass_id][0].xaxis.get_major_formatter()._usetex = False
-            # Set the the x-ticks to every 2 minutes.
-            axs[mass_id][0].set_xticks(np.arange(0, np.max(eics[mass][0]), 1))
-
-            # Add an annotation with the mass and intensity to the highest peak
-            max_I = max(eics[mass][1])
-            max_I_index = np.where(eics[mass][1] == max_I)[0][0]
-            max_time = eics[mass][0][max_I_index]
-            axs[0][0].annotate(f'{max_time:.2f} min; m/z ({max_I:.2e})', xy=(max_time, max_I), xytext=(max_time, max_I * 1.1),
-                                        arrowprops=dict(facecolor='black', shrink=0.05))
-            plt.savefig(subfolder / f'mz_{mass}.png')
-            plt.savefig(subfolder / f'mz_{mass}.svg')
-            plt.close()
-    elif not stack_plot:
-        for mass_id, mass in enumerate(masses):
-            fig, axs = plt.subplots(1, 1, figsize=(10, 10), squeeze=False, sharex=True)
-            axs[0][0].plot(eics[mass][0], eics[mass][1])
-            axs[0][0].set_title(f'{file.stem}: m/z = {mass}')
-
-            # Label the axes with time and intensity
-            axs[0][0].set_xlabel('Time (min)', fontsize = 14)
-            axs[0][0].set_ylabel('Intensity', fontsize = 14)
-            # Set y-label to scientific notation
-            axs[0][0].yaxis.set_major_formatter(plt.FuncFormatter(format_func))
-            #axs[mass_id][0].xaxis.get_major_formatter()._usetex = False
-            # Set the the major x-ticks to every 4 minutes.
-            axs[0][0].set_xticks(np.arange(0, np.max(eics[mass][0]), 4))
-            # Set the minor x-ticks to every 2 minutes.
-            axs[0][0].set_xticks(np.arange(0, np.max(eics[mass][0]), 2), minor=True)
-            # Add an annotation with the mass and intensity to the highest peak
-            max_I = max(eics[mass][1])
-            max_I_index = np.where(eics[mass][1] == max_I)[0][0]
-            max_time = eics[mass][0][max_I_index]
-            axs[0][0].annotate(f'{max_time:.2f} min; m/z ({max_I:.2e})', xy=(max_time, max_I), xytext=(max_time*0.9, max_I * 1.1),
-                                        arrowprops=dict(facecolor='black', shrink=0.05))
-            plt.savefig(subfolder / f'mz_{mass}.png')
-            plt.savefig(subfolder / f'mz_{mass}.svg')
-            plt.close()
-
-
-    # Write an Origin file using the originpro package
-    #print('Writing Origin file')
-    #write_origin_file(masses, eics, subfolder)
+    sample_data = dict()
+    for compound in masses:
+        compound_data = pd.DataFrame()
+        compound_data['Retention time'] = eics[masses[compound][0][0]][0]
+        for isomer in masses[compound]:
+            for adduct_mass in isomer:
+                compound_data[adduct_mass] = eics[adduct_mass][1]
+        compound_data.to_csv(subfolder / f'{compound}.txt', sep='\t', index=False)
+        sample_data[compound] = compound_data
+    plot_compound(sample_data, subfolder, stack_plot)
 
 
 def main():
     # Parse the command line arguments
     parser = argparse.ArgumentParser(description='Extract EICs from mzXML files, plot them in png, svg and Origin, and save them to text files')
     parser.add_argument('-f', '--folder', help='The folder in which the mzXML files are stored')
-    parser.add_argument('-m', '--masses', help='A comma-separated list of the masses for which the EICs should be extracted')
     parser.add_argument('-a', '--accuracy', help='The accuracy in ppm for which the EICs should be extracted', default=5e-6)
+    parser.add_argument('-c', '--cutoff', help='The minimum intensity for which the EICs should be extracted',
+                        default=1e3)
 
     args = parser.parse_args()
 
@@ -244,23 +172,22 @@ def main():
     folder = Path(args.folder)
 
     # Define the masses for which the EICs should be extracted
-    if args.masses is None:
-        masses = [445.1624, 462.1889, 459.178, 476.2045, 363.1205, 380.147, 487.173, 504.1995, 501.1886,
-                  518.2151, 405.1311, 422.1576, 469.1624, 486.1889, 483.178, 500.2045, 387.1205, 404.147,
-                  529.1835, 546.21, 543.1992, 560.2257, 447.1417, 464.1682, 511.173, 528.1995, 525.1886,
-                  542.2151, 429.1311, 446.1576, 531.1992, 548.2257, 545.2148, 562.2413, 449.1573, 466.1838,
-                  513.1886, 530.2151, 527.2042, 544.2308, 431.1467, 448.1732, 513.1886, 530.2151, 527.2043,
-                  544.2308, 431.1467, 448.1732, 495.178, 512.2046, 509.1937, 526.2202, 413.1362, 430.1627]
-    else:
-
-        masses = [float(mass) for mass in args.masses.split(',')]
+    masses = {'1': [[445.1624, 462.1889], [459.178, 476.2045], [363.1205, 380.147]],
+              '2lin': [[487.173, 504.1995], [501.1886, 518.2151], [405.1311, 422.1576]],
+              '2cyc': [[469.1624, 486.1889], [483.178, 500.2045], [387.1205, 404.147]],
+              '3lin': [[529.1835, 546.21], [543.1992, 560.2257], [447.1417, 464.1682]],
+              '3cyc': [[511.173, 528.1995], [525.1886, 542.2151], [429.1311, 446.1576]],
+              '4lin': [[531.1992, 548.2257], [545.2148, 562.2413], [449.1573, 466.1838]],
+              '4cyc': [[513.1886, 530.2151], [527.2042, 544.2308], [431.1467, 448.1732]],
+              '5lin': [[513.1886, 530.2151], [527.2043, 544.2308], [431.1467, 448.1732]],
+              '5cyc': [[495.178, 512.2046], [509.1937, 526.2202], [413.1362, 430.1627]]}
 
     # Get the list of mzXML files
     files = get_mzxml_files(folder)
 
     # Iterate over the files and extract the EICs
     with mp.Pool(max(1, mp.cpu_count() - 2)) as pool:
-        pool.starmap(parse_mxzml_file, [(file, masses) for file in files])
+        pool.starmap(parse_mxzml_file, [(file, masses, args.accuracy, args.cutoff) for file in files])
 
 if __name__=='__main__':
     main()
