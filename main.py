@@ -43,10 +43,11 @@ def extract_eic_for_mass(mzxml_object, mass_list, accuracy = 10e-6, cutoff=1e3):
     for spectrum_id, spectrum in enumerate(spectra):
         #print(f'{spectrum_id}/{max_id}\r', end='')
         for peak_id, experimental_mass in enumerate(spectrum['m/z array']):
+            intensity = spectrum['intensity array'][peak_id]
             for mass in mass_list:
                 eics[mass][0, spectrum_id] = spectrum['retentionTime']
-                if mass > cutoff and abs(experimental_mass-mass) < accuracy*experimental_mass:
-                    eics[mass][1, spectrum_id] = spectrum['intensity array'][peak_id]
+                if intensity > cutoff and abs(experimental_mass-mass) < accuracy*experimental_mass:
+                    eics[mass][1, spectrum_id] = intensity
     return eics
 
 
@@ -62,7 +63,7 @@ def format_func(value):
     return r'${:.1f} \cdot 10^{{{}}}$'.format(value / 10 ** int(np.log10(abs(value))), int(np.log10(abs(value))))
 
 
-def plot_compound(sample_data, subfolder, stack_plot=False):
+def plot_compound(sample_data, file_root, stack_plot=False):
     '''
     This function plots the EICs for a compound
     :param sample_data: The dictionary of dataframes with data for the sample
@@ -76,11 +77,23 @@ def plot_compound(sample_data, subfolder, stack_plot=False):
     for compound_id, compound in enumerate(sample_data):
         if stack_plot:
             plot_num = compound_id
+        else:
+            plot_num = 0
         for isomer_id, isomer in enumerate(sample_data[compound]):
             if isomer == 'Retention time':
                 continue
             # Plot the normalized EICs
-            axs[plot_num][0].plot(sample_data[compound]['Retention time'], sample_data[compound][isomer]/np.max(sample_data[compound][isomer]), color=colors[isomer_id-1], label=isomer)
+            # If stackplot, offset each EIC by 0.01
+            if stack_plot:
+                offset = 0.02*isomer_id
+            else:
+                offset = 0
+
+            # Check if the EIC is empty, if so, don't normalize it
+            if np.sum(sample_data[compound][isomer]) == 0:
+                axs[plot_num][0].plot(sample_data[compound]['Retention time'], sample_data[compound][isomer]+offset, color=colors[isomer_id-1], label=isomer)
+            else:
+                axs[plot_num][0].plot(sample_data[compound]['Retention time'], sample_data[compound][isomer]/np.max(sample_data[compound][isomer])+offset, color=colors[isomer_id-1], label=isomer)
             # Set the line-width to 0.75
             axs[plot_num][0].lines[-1].set_linewidth(0.75)
 
@@ -91,14 +104,15 @@ def plot_compound(sample_data, subfolder, stack_plot=False):
             axs[plot_num][0].xaxis.set_major_formatter(FormatStrFormatter('%g'))
             # Set the x-ticks to every 2 minutes.
             axs[plot_num][0].set_xticks(np.arange(0, np.max(sample_data[compound]['Retention time']), 0.5))
-            # Set the x-range to be between 4 and 8 minutes
-            axs[plot_num][0].set_xlim(4, 8)
-            # Set the y-ticks to be between 0 and 1
-            axs[plot_num][0].set_yticks(np.arange(0, 1.1, 0.5))
-            # Set the y-range to be between 0 and 1.1
-            axs[plot_num][0].set_ylim(0, 1.1)
         else:
             axs[plot_num][0].xaxis.set_ticklabels([])
+
+        # Set the x-range to be between 4 and 8 minutes
+        axs[plot_num][0].set_xlim(4, 8)
+        # Set the y-ticks to be between 0 and 1
+        axs[plot_num][0].set_yticks(np.arange(0, 1.1, 0.5))
+        # Set the y-range to be between 0 and 1.1
+        axs[plot_num][0].set_ylim(0, 1.2)
 
         # Label the middle y-axis of the stacked plot with 'Normalized intensity'
         if stack_plot:
@@ -128,21 +142,32 @@ def plot_compound(sample_data, subfolder, stack_plot=False):
         fig.set_size_inches(8, fig.bbox.height / fig.dpi)
 
     # Save the figure
-    plt.savefig(subfolder.joinpath(subfolder.name + '.png'), dpi=300, bbox_inches='tight')
+    plt.savefig(str(file_root) + '.png', dpi=300, bbox_inches='tight')
     plt.close()
 
-def parse_mxzml_file(file, masses, accuracy, cutoff,stack_plot=False):
+
+def save_to_excel(sample_data, file_root):
+    '''
+    This function saves the EICs to an excel file
+    :param sample_data: The dictionary of dataframes with data for the sample
+    :param file_root:   The file root name of the output Excel file
+    :return:    None
+    '''
+    # Create a Pandas Excel writer using XlsxWriter as the engine.
+    with pd.ExcelWriter(str(file_root) + '.xlsx') as writer:
+        # Write each dataframe to a different worksheet.
+        for compound in sample_data:
+            sample_data[compound].to_excel(writer, sheet_name=compound, index=False)
+
+
+def parse_mzxml_file(file, masses, accuracy, cutoff, stack_plot=False):
     print('Extracting EICs for file {}'.format(file))
     mzxml_object = mzxml.MzXML(str(file.resolve()))
     eics = extract_eic_for_mass(mzxml_object, masses, accuracy, cutoff)
     print('...done')
+    # Obtain the file root
+    file_root = file.parent / file.stem
 
-    # Make a subfolder for the data from the current file
-    subfolder = file.parent / file.stem / 'test'
-
-    # Create the subfolder if it does not exist
-    if not subfolder.exists():
-        subfolder.mkdir()
 
     # Save the EICs to a text file
     print('Saving EICs to text files')
@@ -153,18 +178,20 @@ def parse_mxzml_file(file, masses, accuracy, cutoff,stack_plot=False):
         for isomer in masses[compound]:
             for adduct_mass in isomer:
                 compound_data[adduct_mass] = eics[adduct_mass][1]
-        compound_data.to_csv(subfolder / f'{compound}.txt', sep='\t', index=False)
         sample_data[compound] = compound_data
-    plot_compound(sample_data, subfolder, stack_plot)
+
+    # Save the EICs to an Excel file
+    save_to_excel(sample_data, file_root)
+    plot_compound(sample_data, file_root, stack_plot)
 
 
 def main():
     # Parse the command line arguments
     parser = argparse.ArgumentParser(description='Extract EICs from mzXML files, plot them in png, svg and Origin, and save them to text files')
     parser.add_argument('-f', '--folder', help='The folder in which the mzXML files are stored')
-    parser.add_argument('-a', '--accuracy', help='The accuracy in ppm for which the EICs should be extracted', default=5e-6)
+    parser.add_argument('-a', '--accuracy', help='The accuracy in ppm for which the EICs should be extracted', default=5e-6, type=float)
     parser.add_argument('-c', '--cutoff', help='The minimum intensity for which the EICs should be extracted',
-                        default=1e3)
+                        default=1e3, type=float)
 
     args = parser.parse_args()
 
@@ -187,7 +214,7 @@ def main():
 
     # Iterate over the files and extract the EICs
     with mp.Pool(max(1, mp.cpu_count() - 2)) as pool:
-        pool.starmap(parse_mxzml_file, [(file, masses, args.accuracy, args.cutoff) for file in files])
+        pool.starmap(parse_mzxml_file, [(file, masses, args.accuracy, args.cutoff, True) for file in files])
 
 if __name__=='__main__':
     main()
