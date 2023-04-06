@@ -71,7 +71,8 @@ def plot_compound(sample_data, file_root, stack_plot=False):
     :param stack_plot:  Whether the EICs should be stacked or not
     :return:    None
     '''
-    colors = cmocean.cm.haline(np.linspace(0, 0.9, 6))
+    compounds = list(sample_data.keys())
+    colors = cmocean.cm.haline(np.linspace(0, 0.9, len(sample_data[compounds[0]])))
 
     fig, axs = plt.subplots(len(sample_data), 1, figsize=(16, 18), squeeze=False, sharex=True)
     for compound_id, compound in enumerate(sample_data):
