@@ -63,7 +63,7 @@ def format_func(value):
     return r'${:.1f} \cdot 10^{{{}}}$'.format(value / 10 ** int(np.log10(abs(value))), int(np.log10(abs(value))))
 
 
-def plot_compound(sample_data, file_root, stack_plot=False):
+def plot_compound(sample_data, file_root, stack_plot=False, normalize = True, set_title=False):
     '''
     This function plots the EICs for a compound
     :param sample_data: The dictionary of dataframes with data for the sample
@@ -72,18 +72,27 @@ def plot_compound(sample_data, file_root, stack_plot=False):
     :return:    None
     '''
     compounds = list(sample_data.keys())
-    colors = cmocean.cm.haline(np.linspace(0, 0.9, len(sample_data[compounds[0]])))
+
+    colors = cmocean.cm.haline(np.linspace(0, 0.9, len(sample_data[compounds[0]].columns)-1))
 
     fig, axs = plt.subplots(len(sample_data), 1, figsize=(16, 18), squeeze=False, sharex=True)
+
+    if set_title:
+        fig.suptitle(file_root, fontsize=16)
+
     for compound_id, compound in enumerate(sample_data):
+
         if stack_plot:
             plot_num = compound_id
         else:
             plot_num = 0
+
         for isomer_id, isomer in enumerate(sample_data[compound]):
+            # Skip the retention time column
             if isomer == 'Retention time':
                 continue
-            # Plot the normalized EICs
+
+            ## Plot the EICs. If stack_plot is True, offset each EIC by 0.01
             # If stackplot, offset each EIC by 0.01
             if stack_plot:
                 offset = 0.02*isomer_id
@@ -91,7 +100,7 @@ def plot_compound(sample_data, file_root, stack_plot=False):
                 offset = 0
 
             # Check if the EIC is empty, if so, don't normalize it
-            if np.sum(sample_data[compound][isomer]) == 0:
+            if np.sum(sample_data[compound][isomer]) == 0 or not normalize:
                 axs[plot_num][0].plot(sample_data[compound]['Retention time'], sample_data[compound][isomer]+offset, color=colors[isomer_id-1], label=isomer)
             else:
                 axs[plot_num][0].plot(sample_data[compound]['Retention time'], sample_data[compound][isomer]/np.max(sample_data[compound][isomer])+offset, color=colors[isomer_id-1], label=isomer)
@@ -110,11 +119,17 @@ def plot_compound(sample_data, file_root, stack_plot=False):
 
         # Set the x-range to be between 4 and 8 minutes
         axs[plot_num][0].set_xlim(4, 8)
-        # Set the y-ticks to be between 0 and 1
-        axs[plot_num][0].set_yticks(np.arange(0, 1.1, 0.5))
-        # Set the y-range to be between 0 and 1.1
-        axs[plot_num][0].set_ylim(0, 1.2)
 
+        ## Set the axis labels
+        if normalize:
+            # Set the y-ticks to be between 0 and 1
+            axs[plot_num][0].set_yticks(np.arange(0, 1.1, 0.5))
+            # Set the y-range to be between 0 and 1.1
+            axs[plot_num][0].set_ylim(0, 1.2)
+        else:
+            # Set the y-ticks to the maximum intensity of the EICs
+            axs[plot_num][0].set_yticks(np.arange(0, np.max([np.max(sample_data[compound][isomer])
+                                                            for isomer in sample_data[compound]]), 1e5))
         # Label the middle y-axis of the stacked plot with 'Normalized intensity'
         if stack_plot:
             if compound_id%(np.floor(len(sample_data)/2)) == 0 and compound_id not in [0, len(sample_data)-1]:
@@ -171,7 +186,6 @@ def parse_mzxml_file(file, masses, accuracy, cutoff, stack_plot=False):
 
 
     # Save the EICs to a text file
-    print('Saving EICs to text files')
     sample_data = dict()
     for compound in masses:
         compound_data = pd.DataFrame()
@@ -181,6 +195,7 @@ def parse_mzxml_file(file, masses, accuracy, cutoff, stack_plot=False):
                 compound_data[adduct_mass] = eics[adduct_mass][1]
         sample_data[compound] = compound_data
 
+    print('Saving EICs to text files')
     # Save the EICs to an Excel file
     save_to_excel(sample_data, file_root)
     plot_compound(sample_data, file_root, stack_plot)
@@ -208,7 +223,8 @@ def main():
               '4lin': [[531.1992, 548.2257], [545.2148, 562.2413], [449.1573, 466.1838]],
               '4cyc': [[513.1886, 530.2151], [527.2042, 544.2308], [431.1467, 448.1732]],
               '5lin': [[513.1886, 530.2151], [527.2043, 544.2308], [431.1467, 448.1732]],
-              '5cyc': [[495.178, 512.2046], [509.1937, 526.2202], [413.1362, 430.1627]]}
+              '5cyc': [[495.178, 512.2046], [509.1937, 526.2202], [413.1362, 430.1627]],
+              'oocydin': [[569.2512, 586.2777], [553.2199, 570.2464], [471.1780, 488.2045], [567.2355, 584.2620]],}
 
     # Get the list of mzXML files
     files = get_mzxml_files(folder)
