@@ -73,9 +73,15 @@ def plot_compound(sample_data, file_root, stack_plot=False, normalize = True, se
     '''
     compounds = list(sample_data.keys())
 
-    colors = cmocean.cm.haline(np.linspace(0, 0.9, len(sample_data[compounds[0]].columns)-1))
+    if stack_plot:
+        fig, axs = plt.subplots(len(sample_data), 1, figsize=(16, 18), squeeze=False, sharex=True)
+        colors = cmocean.cm.haline(
+            np.linspace(0, 0.9, max([len(sample_data[compound].columns) for compound in compounds])))
+    else:
+        fig, axs = plt.subplots(1, 1, figsize=(16, 18), squeeze=False, sharex=True)
+        colors = cmocean.cm.haline(
+            np.linspace(0, 0.9, np.sum([len(sample_data[compound].columns) for compound in compounds])))
 
-    fig, axs = plt.subplots(len(sample_data), 1, figsize=(16, 18), squeeze=False, sharex=True)
 
     if set_title:
         fig.suptitle(file_root, fontsize=16)
