@@ -12,6 +12,7 @@ from matplotlib.ticker import FormatStrFormatter, ScalarFormatter
 import cmocean
 import argparse
 import multiprocessing as mp
+import pickle as pkl
 
 def get_mzxml_files(folder):
     '''
@@ -190,15 +191,25 @@ def save_to_excel(sample_data, file_root):
             sample_data[compound].to_excel(writer, sheet_name=compound, index=False)
 
 
-def parse_mzxml_file(file, masses, accuracy, cutoff, stack_plot=False):
+def parse_mzxml_file(file, masses, accuracy, cutoff, stack_plot=False, use_pickle=True):
     print('Extracting EICs for file {}'.format(file))
-    mzxml_object = mzxml.MzXML(str(file.resolve()))
-    eics = extract_eic_for_mass(mzxml_object, masses, accuracy, cutoff)
-
+    if use_pickle:
+        try:
+            with open(str(file.parent / file.stem) + '.pkl', 'rb') as f:
+                eics = pkl.load(f)
+            print('...done')
+            return eics
+        except FileNotFoundError:
+            mzxml_object = mzxml.MzXML(str(file.resolve()))
+            eics = extract_eic_for_mass(mzxml_object, masses, accuracy, cutoff)
+            with open(str(file.parent / file.stem) + '.pkl', 'wb') as f:
+                pkl.dump(eics, f)
+    else:
+        mzxml_object = mzxml.MzXML(str(file.resolve()))
+        eics = extract_eic_for_mass(mzxml_object, masses, accuracy, cutoff)
     print('...done')
     # Obtain the file root
     file_root = file.parent / file.stem
-
 
     # Save the EICs to a text file
     sample_data = dict()
