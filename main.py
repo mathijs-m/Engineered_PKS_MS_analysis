@@ -63,7 +63,7 @@ def format_func(value):
     return r'${:.1f} \cdot 10^{{{}}}$'.format(value / 10 ** int(np.log10(abs(value))), int(np.log10(abs(value))))
 
 
-def plot_compound(sample_data, file_root, stack_plot=False, normalize = True, set_title=False):
+def plot_compound(sample_data, file_root, stack_plot=False, normalize = True, set_title=False, row_length=5):
     '''
     This function plots the EICs for a compound
     :param sample_data: The dictionary of dataframes with data for the sample
@@ -74,7 +74,9 @@ def plot_compound(sample_data, file_root, stack_plot=False, normalize = True, se
     compounds = list(sample_data.keys())
 
     if stack_plot:
-        fig, axs = plt.subplots(len(sample_data), 1, figsize=(16, 18), squeeze=False, sharex=True)
+        num_rows = min(len(sample_data), row_length)
+        num_cols = (len(sample_data)-1)//row_length+1
+        fig, axs = plt.subplots(num_rows, num_cols, figsize=(num_rows*1, num_cols*20), squeeze=False, sharex=True)
         colors = cmocean.cm.haline(
             np.linspace(0, 0.9, max([len(sample_data[compound].columns) for compound in compounds])))
     else:
@@ -84,14 +86,17 @@ def plot_compound(sample_data, file_root, stack_plot=False, normalize = True, se
 
 
     if set_title:
-        fig.suptitle(file_root, fontsize=16)
+        title = file_root.name.split('_')[2]
+        fig.suptitle(title, fontsize=16)
 
     for compound_id, compound in enumerate(sample_data):
 
         if stack_plot:
-            plot_num = compound_id
+            plot_num = compound_id%row_length
+            row_num = compound_id//row_length
         else:
             plot_num = 0
+            row_num = 0
 
         for isomer_id, isomer in enumerate(sample_data[compound]):
             # Skip the retention time column
@@ -107,50 +112,52 @@ def plot_compound(sample_data, file_root, stack_plot=False, normalize = True, se
 
             # Check if the EIC is empty, if so, don't normalize it
             if np.sum(sample_data[compound][isomer]) == 0 or not normalize:
-                axs[plot_num][0].plot(sample_data[compound]['Retention time'], sample_data[compound][isomer]+offset, color=colors[isomer_id-1], label=isomer)
+                axs[plot_num][row_num].plot(sample_data[compound]['Retention time'], sample_data[compound][isomer]+offset, color=colors[isomer_id-1], label=isomer)
             else:
-                axs[plot_num][0].plot(sample_data[compound]['Retention time'], sample_data[compound][isomer]/np.max(sample_data[compound][isomer])+offset, color=colors[isomer_id-1], label=isomer)
+                axs[plot_num][row_num].plot(sample_data[compound]['Retention time'], sample_data[compound][isomer]/np.max(sample_data[compound][isomer])+offset, color=colors[isomer_id-1], label=isomer)
             # Set the line-width to 0.75
-            axs[plot_num][0].lines[-1].set_linewidth(0.75)
+            axs[plot_num][row_num].lines[-1].set_linewidth(0.75)
 
         # Label the axes with time and intensity. Also only label the x-axis of the bottom plot
         if compound_id == len(sample_data)-1:
-            axs[plot_num][0].set_xlabel('Time (min)', fontsize=10)
-            axs[plot_num][0].tick_params(axis='x', which='both', bottom=True, top=False, labelbottom=True)
-            axs[plot_num][0].xaxis.set_major_formatter(FormatStrFormatter('%g'))
+            axs[plot_num][row_num].set_xlabel('Time (min)', fontsize=10)
+            axs[plot_num][row_num].tick_params(axis='x', which='both', bottom=True, top=False, labelbottom=True)
+            axs[plot_num][row_num].xaxis.set_major_formatter(FormatStrFormatter('%g'))
             # Set the x-ticks to every 2 minutes.
-            axs[plot_num][0].set_xticks(np.arange(0, np.max(sample_data[compound]['Retention time']), 0.5))
+            axs[plot_num][row_num].set_xticks(np.arange(0, np.max(sample_data[compound]['Retention time']), 0.5))
         else:
-            axs[plot_num][0].xaxis.set_ticklabels([])
+            axs[plot_num][row_num].xaxis.set_ticklabels([])
 
-        # Set the x-range to be between 4 and 8 minutes
-        axs[plot_num][0].set_xlim(4, 8)
+        # Set the x-range to be between 4 and 16 minutes
+        axs[plot_num][row_num].set_xlim(4, 16)
 
         ## Set the axis labels
         if normalize:
             # Set the y-ticks to be between 0 and 1
-            axs[plot_num][0].set_yticks(np.arange(0, 1.1, 0.5))
+            axs[plot_num][row_num].set_yticks(np.arange(0, 1.1, 0.5))
             # Set the y-range to be between 0 and 1.1
-            axs[plot_num][0].set_ylim(0, 1.2)
+            axs[plot_num][row_num].set_ylim(0, 1.2)
         else:
             # Set the y-ticks to the maximum intensity of the EICs
-            axs[plot_num][0].set_yticks(np.arange(0, np.max([np.max(sample_data[compound][isomer])
+            axs[plot_num][row_num].set_yticks(np.arange(0, np.max([np.max(sample_data[compound][isomer])
                                                             for isomer in sample_data[compound]]), 1e5))
+
         # Label the middle y-axis of the stacked plot with 'Normalized intensity'
         if stack_plot:
-            if compound_id%(np.floor(len(sample_data)/2)) == 0 and compound_id not in [0, len(sample_data)-1]:
-                axs[plot_num][0].set_ylabel('Normalized intensity', fontsize=10)
+            if compound_id%row_length/(min(row_length, len(sample_data))//2) == 1:
+                axs[plot_num][row_num].set_ylabel('Normalized intensity', fontsize=10)
         # Label the left y-axis of the non-stacked plot with 'Normalized intensity'
         else:
-            axs[plot_num][0].set_ylabel('Normalized intensity', fontsize=10)
+            axs[plot_num][row_num].set_ylabel('Normalized intensity', fontsize=10)
 
         # Set the title of the compound in the upper left corner of the graph
-        axs[plot_num][0].set_title(' '+compound, fontsize=10, loc='left', pad=-10)
+        axs[plot_num][row_num].set_title(' '+compound, fontsize=10, loc='left', pad=-10)
         # Make a legend string that also mentions the maximum intensity of the EIC
         legend_strings = [f'{isomer:.4f} - {format_func(np.max(sample_data[compound][isomer]))}'
                           for isomer in sample_data[compound] if isomer != 'Retention time']
         # Set the legend on the right side of the graph and have it constrained to the heigth of the graph
-        legend = axs[compound_id][0].legend(legend_strings,loc='center left', bbox_to_anchor=(1, 0.5), ncol=2, frameon=False, fontsize=8)
+        legend = axs[compound_id%row_length][row_num].legend(legend_strings,loc='center left', bbox_to_anchor=(1, 0.5),
+                                                             ncol=1, frameon=False, fontsize=8)
         '''
         # Set the legend title to 'Isomer - Max intensity' and align it to the left for the top legend
         if compound_id == 0:
@@ -161,9 +168,10 @@ def plot_compound(sample_data, file_root, stack_plot=False, normalize = True, se
         plt.setp(legend.get_title(), fontsize=8)
 
         fig.tight_layout()
-        fig.set_size_inches(8, fig.bbox.height / fig.dpi)
+        fig.set_size_inches((num_rows * 2, num_cols * 5))
 
     # Save the figure
+
     plt.savefig(str(file_root) + '.png', dpi=300, bbox_inches='tight')
     plt.close()
 
@@ -186,6 +194,7 @@ def parse_mzxml_file(file, masses, accuracy, cutoff, stack_plot=False):
     print('Extracting EICs for file {}'.format(file))
     mzxml_object = mzxml.MzXML(str(file.resolve()))
     eics = extract_eic_for_mass(mzxml_object, masses, accuracy, cutoff)
+
     print('...done')
     # Obtain the file root
     file_root = file.parent / file.stem
