@@ -39,18 +39,17 @@ def check_isotope_pattern(spectrum, ref_peak_index, delta_mass, isotope_intensit
 
     parent_intensity = spectrum['intensity array'][ref_peak_index]
     parent_mass = spectrum['m/z array'][ref_peak_index]
-    for peak_id, isotope_mass in enumerate(spectrum['m/z array'][ref_peak_index:]):
+    for delta_peak_id, isotope_mass in enumerate(spectrum['m/z array'][ref_peak_index:]):
         if isotope_mass > parent_mass+delta_mass*1.1:
-            return False
-        isotope_intensity = spectrum['intensity array'][peak_id]
-        if abs(isotope_mass-(parent_mass-delta_mass)) < accuracy*parent_mass:
-            if isotope_intensity > isotope_intensity_range[0]*parent_intensity and \
-                    isotope_intensity > isotope_intensity_range[1]*parent_intensity:
+            break
+        relative_isotope_intensity = spectrum['intensity array'][delta_peak_id + ref_peak_index]/parent_intensity
+        if abs(isotope_mass-(parent_mass+delta_mass)) < accuracy*parent_mass:
+            if isotope_intensity_range[0] < relative_isotope_intensity < isotope_intensity_range[1]:
                 return True
 
 
-def extract_eic_for_mass(mzxml_object, mass_list, accuracy = 10e-6, cutoff=1e3, delta_mass = 1.99705,
-                         isotope_intensity_range=[0.2, 1]):
+def extract_eic_for_mass(mzxml_object, mass_list, accuracy = 10e-6, cutoff=1e3, delta_mass=1.99705,
+                         isotope_intensity_range=[0.2, 2]):
     '''
     This function extracts the EICs for a list of masses from a mzXML object
     :param mzxml_object:   The mzXML object from pyteomics
@@ -77,7 +76,9 @@ def extract_eic_for_mass(mzxml_object, mass_list, accuracy = 10e-6, cutoff=1e3, 
             for mass in mass_list:
                 eics[mass][0, spectrum_id] = spectrum['retentionTime']
                 if intensity > cutoff and abs(experimental_mass-mass) < accuracy*experimental_mass:
-                    if check_isotope_pattern(spectrum, peak_id, delta_mass, isotope_intensity_range, accuracy):
+                    if check_isotope_pattern(spectrum, peak_id, delta_mass, isotope_intensity_range, accuracy) or \
+                        any([mass in adduct_mass for adduct_mass in masses['1']]):
+                        print(mass, spectrum['intensity array'][peak_id])
                         eics[mass][1, spectrum_id] = intensity
     return eics
 
