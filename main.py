@@ -77,8 +77,7 @@ def extract_eic_for_mass(mzxml_object, mass_list, accuracy = 10e-6, cutoff=1e3, 
                 eics[mass][0, spectrum_id] = spectrum['retentionTime']
                 if intensity > cutoff and abs(experimental_mass-mass) < accuracy*experimental_mass:
                     if check_isotope_pattern(spectrum, peak_id, delta_mass, isotope_intensity_range, accuracy) or \
-                        any([mass in adduct_mass for adduct_mass in masses['1']]):
-                        print(mass, spectrum['intensity array'][peak_id])
+                        any([mass in adduct_mass for adduct_mass in mass_list['1']]):
                         eics[mass][1, spectrum_id] = intensity
     return eics
 
