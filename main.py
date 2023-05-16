@@ -13,6 +13,7 @@ import cmocean
 import argparse
 import multiprocessing as mp
 import pickle as pkl
+import os
 
 def get_mzxml_files(folder):
     '''
@@ -64,6 +65,8 @@ def extract_eic_for_mass(mzxml_object, mass_list, accuracy = 10e-6, cutoff=1e3, 
     max_id = int(mzxml_object.time[1e3]['num'])
     spectra = [mzxml_object.get_by_id(str(id)) for id in range(1, max_id)]
     eics = dict()
+
+    non_chlorinated_masses = [mass for compound in ['1'] for adduct_masses in mass_list[compound] for mass in adduct_masses]
     mass_list = set(adduct_mass for compound in mass_list for isomer in mass_list[compound] for adduct_mass in isomer)
     for mass in mass_list:
         eics[mass] = np.zeros((2,max_id-1), dtype=np.float32)
@@ -77,7 +80,7 @@ def extract_eic_for_mass(mzxml_object, mass_list, accuracy = 10e-6, cutoff=1e3, 
                 eics[mass][0, spectrum_id] = spectrum['retentionTime']
                 if intensity > cutoff and abs(experimental_mass-mass) < accuracy*experimental_mass:
                     if check_isotope_pattern(spectrum, peak_id, delta_mass, isotope_intensity_range, accuracy) or \
-                        any([mass in adduct_mass for adduct_mass in mass_list['1']]):
+                        mass in non_chlorinated_masses:
                         eics[mass][1, spectrum_id] = intensity
     return eics
 
@@ -94,15 +97,19 @@ def format_func(value, pos=None):
     return r'${:.1f} \cdot 10^{{{}}}$'.format(value / 10 ** int(np.log10(abs(value))), int(np.log10(abs(value))))
 
 
-def plot_compound(sample_data, file_root, stack_plot=False, set_title=False, normalize = True, row_length=5):
+def plot_compound(sample_data, file_root, retention_times, title_separator, stack_plot=False, set_title=False, normalize = True,
+                  row_length=5):
     '''
     This function plots the EICs for a compound
     :param sample_data: The dictionary of dataframes with data for the sample
+    :param file_root:   Pathlib object with the root of the file name
+    :param retention_times: Dictionary of lists with the retention times of the target compounds
     :param subfolder:   The subfolder in which the plots should be saved
     :param stack_plot:  Whether the EICs should be stacked or not
     :return:    None
     '''
     compounds = list(sample_data.keys())
+    time_range = [9, 17]
 
     if stack_plot:
         num_rows = min(len(sample_data), row_length)
@@ -119,7 +126,7 @@ def plot_compound(sample_data, file_root, stack_plot=False, set_title=False, nor
 
 
     if set_title:
-        title = file_root.name.split('Stefan_')[1]
+        title = title_separator.join(file_root.name.split(title_separator)[1:])
         title = title.replace('_', '-')
         fig.suptitle(title, fontsize=16)
 
@@ -159,6 +166,18 @@ def plot_compound(sample_data, file_root, stack_plot=False, set_title=False, nor
             # Set the line-width to 0.75
             axs[plot_num][row_num].lines[-1].set_linewidth(0.75)
 
+        # Plot a transparent box in the background of the EICs in the time range indicated by the retention_time list
+        for congoner_id, congoner_retention_times in enumerate(retention_times[compound]):
+            for adduct_id, adduct_retention_time in enumerate(congoner_retention_times):
+                axs[plot_num][row_num].axvspan(adduct_retention_time-0.05, adduct_retention_time+0.05, alpha=0.1,
+                                               color=colors[congoner_id])
+                # Label the box with the adduct name above the subplots
+                if stack_plot:
+                    axs[plot_num][row_num].text((adduct_retention_time-min(time_range))/(max(time_range)-min(time_range)),
+                                                1.01, ['-', 'a', 'b', 'c'][congoner_id], fontsize=10,
+                                                horizontalalignment='center', verticalalignment='bottom',
+                                                transform=axs[plot_num][row_num].transAxes)
+
         # Label the axes with time and intensity. Also only label the x-axis of the bottom plot
         if compound_id%row_length==(row_length-1):
             axs[plot_num][row_num].set_xlabel('Time (min)', fontsize=10)
@@ -170,7 +189,7 @@ def plot_compound(sample_data, file_root, stack_plot=False, set_title=False, nor
             axs[plot_num][row_num].xaxis.set_ticklabels([])
 
         # Set the x-range to be between 4 and 16 minutes
-        axs[plot_num][row_num].set_xlim(7, 19)
+        axs[plot_num][row_num].set_xlim(time_range[0], time_range[1])
 
         ## Set the axis labels
         if normalize:
@@ -237,7 +256,36 @@ def save_to_excel(sample_data, file_root):
             sample_data[compound].to_excel(writer, sheet_name=compound, index=False)
 
 
-def parse_mzxml_file(file, masses, accuracy, cutoff, stack_plot=False, use_pickle=True, show_title=True, normalize=True):
+def save_to_txt(sample_data, file_root):
+    '''
+    This function saves the EICs to a single text file, with each compound separated by the compound name
+    :param sample_data: The dictionary of dataframes with data for the sample
+    :param file_root:   The file root name of the output Excel file
+    :return:    None
+    '''
+    # Make a folder for the text files
+    if not os.path.exists(str(file_root)):
+        os.makedirs(str(file_root))
+
+    # Write each dataframe to a different text file.
+    # Each text file is named after the compound name
+    # and contains the EIC data for that compound
+    for compound in sample_data:
+        with open(str(file_root) + '/' + compound + '.txt', 'w') as f:
+            # write to csv file
+            sample_data[compound].to_csv(f, index=False, sep='\t')
+            
+    # Additionally write all the data to a single text file
+    with open(str(file_root) + '.txt', 'w') as f:
+        for compound in sample_data:
+            f.write('"' + compound + '"\n')
+            f.write(sample_data[compound].to_string(index=False))
+            f.write('\n\n')
+
+
+
+def parse_mzxml_file(file, masses, retention_times, accuracy, cutoff, stack_plot=False, use_pickle=True,
+                     show_title=True, normalize=True, title_separator='-'):
     print('Extracting EICs for file {}'.format(file))
     if use_pickle:
         try:
@@ -268,8 +316,9 @@ def parse_mzxml_file(file, masses, accuracy, cutoff, stack_plot=False, use_pickl
 
     print('Saving EICs to text files')
     # Save the EICs to an Excel file
-    save_to_excel(sample_data, file_root)
-    plot_compound(sample_data, file_root, stack_plot, show_title, normalize)
+    #save_to_excel(sample_data, file_root)
+    save_to_txt(sample_data, file_root)
+    plot_compound(sample_data, file_root, retention_times, stack_plot, show_title, normalize, title_separator)
 
 
 def main():
@@ -285,6 +334,7 @@ def main():
     parser.add_argument('-t', '--title', help='Show the sample title in the plot', action='store_true', default=False)
     parser.add_argument('-st', '--stack', help='Plot the EICs in a stacked plot', action='store_false', default=True)
     parser.add_argument('-n', '--normalize', help='Normalize the EICs', action='store_true', default=False)
+    parser.add_argument('-ts', '--title-separator', help='Separator to remove title prefix, e.g., experiment code.', type=str, default='-')
 
     args = parser.parse_args()
 
@@ -303,13 +353,23 @@ def main():
               '5cyc': [[495.178, 512.2046], [509.1937, 526.2202], [413.1362, 430.1627]],
               'oocydin': [[569.2512, 586.2777], [553.2199, 570.2464], [471.1780, 488.2045], [567.2355, 584.2620]]}
 
+    retention_times = {'1': [[12.02], [12.02], [10.28]],
+              '2lin': [[14.82], [16.72], [12.55]],
+              '2cyc': [[14.82], [16.72], [12.55]],
+              '3lin': [[], [], []],
+              '3cyc': [[11.88, 11.52], [11.77, 14.89], [12.81, 9.97]],
+              '4lin': [[], [], []],
+              '4cyc': [[12.80, 12.75], [], [10.76]],
+              '5lin': [[], [], []],
+              '5cyc': [[14.59], [14.59], [12.55]],
+              'oocydin': [[14.10], [14.75], [14.10], []]}
     # Get the list of mzXML files
     files = get_mzxml_files(folder)
 
     # Iterate over the files and extract the EICs
     with mp.Pool(max(1, mp.cpu_count() - 2)) as pool:
-        pool.starmap(parse_mzxml_file, [(file, masses, args.accuracy, args.cutoff, args.stack, args.pickle, args.title,
-                                         args.normalize)
+        pool.starmap(parse_mzxml_file, [(file, masses, retention_times, args.accuracy, args.cutoff, args.stack, args.pickle, args.title,
+                                         args.normalize, args.title_separator)
                                         for file in files])
 
 if __name__=='__main__':
