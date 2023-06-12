@@ -109,7 +109,7 @@ def plot_compound(sample_data, file_root, title_separator, stack_plot=False, set
     :return:    None
     '''
     compounds = list(sample_data.keys())
-    time_range = [2, 17]
+    time_range = [2, 9]
     fig_size = (36, 18)
 
     if stack_plot:
@@ -175,7 +175,8 @@ def plot_compound(sample_data, file_root, title_separator, stack_plot=False, set
             # Set the x-ticks to every 2 minutes.
             axs[plot_num][row_num].set_xticks(np.arange(0, np.max(sample_data[compound]['Retention time']), 1))
         else:
-            axs[plot_num][row_num].xaxis.set_ticklabels([])
+            axs[plot_num][row_num].set_xlabel('')  # Set an empty x-axis label
+            axs[plot_num][row_num].tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
 
         # Set the x-range to be between 4 and 16 minutes
         axs[plot_num][row_num].set_xlim(time_range[0], time_range[1])
