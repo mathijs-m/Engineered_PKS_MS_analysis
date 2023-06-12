@@ -66,7 +66,6 @@ def extract_eic_for_mass(mzxml_object, mass_list, accuracy = 10e-6, cutoff=1e3, 
     spectra = [mzxml_object.get_by_id(str(id)) for id in range(1, max_id)]
     eics = dict()
 
-    non_chlorinated_masses = [mass for compound in ['1'] for adduct_masses in mass_list[compound] for mass in adduct_masses]
     mass_list = set(adduct_mass for compound in mass_list for isomer in mass_list[compound] for adduct_mass in isomer)
     for mass in mass_list:
         eics[mass] = np.zeros((2,max_id-1), dtype=np.float32)
@@ -79,8 +78,7 @@ def extract_eic_for_mass(mzxml_object, mass_list, accuracy = 10e-6, cutoff=1e3, 
             for mass in mass_list:
                 eics[mass][0, spectrum_id] = spectrum['retentionTime']
                 if intensity > cutoff and abs(experimental_mass-mass) < accuracy*experimental_mass:
-                    if check_isotope_pattern(spectrum, peak_id, delta_mass, isotope_intensity_range, accuracy) or \
-                        mass in non_chlorinated_masses:
+                    # No check for isotope pattern for bacillaene
                         eics[mass][1, spectrum_id] = intensity
     return eics
 
@@ -97,13 +95,12 @@ def format_func(value, pos=None):
     return r'${:.1f} \cdot 10^{{{}}}$'.format(value / 10 ** int(np.log10(abs(value))), int(np.log10(abs(value))))
 
 
-def plot_compound(sample_data, file_root, retention_times, title_separator, stack_plot=False, set_title=False, normalize = True,
-                  row_length=6):
+def plot_compound(sample_data, file_root, title_separator, stack_plot=False, set_title=False, normalize = True,
+                  row_length=5):
     '''
     This function plots the EICs for a compound
     :param sample_data: The dictionary of dataframes with data for the sample
     :param file_root:   Pathlib object with the root of the file name
-    :param retention_times: Dictionary of lists with the retention times of the target compounds
     :param title_separator: The separator between the compound name and the retention time
     :param stack_plot:  Whether the EICs should be stacked or not
     :param set_title:   Whether the title should be set or not
@@ -112,7 +109,7 @@ def plot_compound(sample_data, file_root, retention_times, title_separator, stac
     :return:    None
     '''
     compounds = list(sample_data.keys())
-    time_range = [9, 17]
+    time_range = [2, 17]
     fig_size = (36, 18)
 
     if stack_plot:
@@ -170,18 +167,6 @@ def plot_compound(sample_data, file_root, retention_times, title_separator, stac
             # Set the line-width to 0.75
             axs[plot_num][row_num].lines[-1].set_linewidth(0.75)
 
-        # Plot a transparent box in the background of the EICs in the time range indicated by the retention_time list
-        for congoner_id, congoner_retention_times in enumerate(retention_times[compound]):
-            for adduct_id, adduct_retention_time in enumerate(congoner_retention_times):
-                axs[plot_num][row_num].axvspan(adduct_retention_time-0.05, adduct_retention_time+0.05, alpha=0.1,
-                                               color=colors[congoner_id])
-                '''# Label the box with the adduct name above the subplots
-                if stack_plot:
-                    axs[plot_num][row_num].text((adduct_retention_time-min(time_range))/(max(time_range)-min(time_range)),
-                                                1.01, ['-', 'a', 'b', 'c'][congoner_id], fontsize=10,
-                                                horizontalalignment='center', verticalalignment='bottom',
-                                                transform=axs[plot_num][row_num].transAxes)
-                '''
         # Label the axes with time and intensity. Also only label the x-axis of the bottom plot
         if compound_id%row_length==(row_length-1):
             axs[plot_num][row_num].set_xlabel('Time (min)', fontsize=10)
@@ -238,7 +223,7 @@ def plot_compound(sample_data, file_root, retention_times, title_separator, stac
         plt.setp(legend.get_title(), fontsize=8)
 
         fig.tight_layout()
-        fig.set_size_inches((num_rows * 2, num_cols * 15))
+        fig.set_size_inches((num_rows * 2, num_cols * 7))
 
     # Save the figure
 
@@ -288,7 +273,7 @@ def save_to_txt(sample_data, file_root):
 
 
 
-def parse_mzxml_file(file, masses, retention_times, accuracy, cutoff, stack_plot=False, use_pickle=True,
+def parse_mzxml_file(file, masses, accuracy, cutoff, stack_plot=False, use_pickle=True,
                      show_title=True, normalize=True, title_separator='-'):
     print('Extracting EICs for file {}'.format(file))
     if use_pickle:
@@ -322,7 +307,7 @@ def parse_mzxml_file(file, masses, retention_times, accuracy, cutoff, stack_plot
     # Save the EICs to an Excel file
     #save_to_excel(sample_data, file_root)
     save_to_txt(sample_data, file_root)
-    plot_compound(sample_data, file_root, retention_times, title_separator, stack_plot, show_title, normalize)
+    plot_compound(sample_data, file_root, title_separator, stack_plot, show_title, normalize)
 
 
 def main():
@@ -346,39 +331,41 @@ def main():
     folder = Path(args.folder)
 
     # Define the masses for which the EICs should be extracted
-    masses = {'1': [[445.1624, 462.1889], [459.178, 476.2045], [363.1205, 380.147]],
-              '2lin': [[487.173, 504.1995], [501.1886, 518.2151], [405.1311, 422.1576]],
-              '2cyc': [[469.1624, 486.1889], [483.178, 500.2045], [387.1205, 404.147]],
-              '3lin': [[529.1835, 546.21], [543.1992, 560.2257], [447.1417, 464.1682]],
-              '3cyc': [[511.173, 528.1995], [525.1886, 542.2151], [429.1311, 446.1576]],
-              '4lin': [[531.1992, 548.2257], [545.2148, 562.2413], [449.1573, 466.1838]],
-              '4cyc': [[513.1886, 530.2151], [527.2042, 544.2308], [431.1467, 448.1732]],
-              '5lin': [[513.1886, 530.2151], [527.2043, 544.2308], [431.1467, 448.1732]],
-              '5cyc': [[495.178, 512.2046], [509.1937, 526.2202], [413.1362, 430.1627]],
-              'oocydin': [[471.1780, 488.2045], [555.2355, 572.2621], [567.2355, 584.2621], [553.2199, 570.2464]]} # Oocydin A, B, C, haterumalide B
-    masses = {'1': [[445.1624, 462.1889], [459.178, 476.2045], [363.1205, 380.147]],
-              '2': [[469.1624, 486.1889], [483.178, 500.2045], [387.1205, 404.147]],
-              '3': [[511.173, 528.1995], [525.1886, 542.2151], [429.1311, 446.1576]],
-              '4': [[513.1886, 530.2151], [527.2042, 544.2308], [431.1467, 448.1732]],
-              '5': [[495.178, 512.2046], [509.1937, 526.2202], [413.1362, 430.1627]],
-              'oocydin': [[471.1780, 488.2045], [555.2355, 572.2621], [567.2355, 584.2621], [553.2199, 570.2464]]} # Oocydin A, B, C, haterumalide B
+    mass_H = 1.007825032
+    mass_Na = 22.989218
 
-    retention_times = {'1': [[12.02], [12.02], [10.28]],
-              '2lin': [[14.82], [16.72], [12.55]],
-              '2': [[14.82], [16.72], [12.55]],
-              '3lin': [[], [], []],
-              '3': [[11.88], [11.77, 14.89], [12.81, 9.97]],
-              '4lin': [[], [], []],
-              '4': [[12.80, 12.75], [], [10.76]],
-              '5lin': [[], [], []],
-              '5': [[14.59], [14.59], [12.55]],
-              'oocydin': [[14.10], [], [14.10], []]}
+    masses = {'Intermediate ACP2': [[190.1074]],
+              'Intermediate ACP3/4': [[218.1387]],
+              'Intermediate ACP5': [[262.1649]],
+              'Intermediate ACP6': [[244.1543]],
+              'Keto extension': [[286.1649]],
+              'Reduction': [[288.1805]],
+              'Dehydration': [[270.1700]],
+              'Double extension': [[327.1682]],
+              'Dehydrated double extension': [[309.1577]],
+              'Bacillibactin': [[883.2628]],
+              }
+
+    masses = {'Intermediate ACP10': [[310.2013]],
+              'Intermediate ACP11': [[336.2169]],
+              'Keto extension': [[378.2275]],
+              'Reduction': [[380.2431]],
+              'Dehydration': [[362.2326]],
+              'Double extension': [[378.2275]],
+              'Dehydrated double extension': [[360.2170]],
+              'Bacillibactin': [[883.2628]],
+              }
+
+    for compound in masses:
+        mass = masses[compound][0][0]
+        masses[compound][0] = [mass, mass - mass_H + mass_Na]
+
     # Get the list of mzXML files
     files = get_mzxml_files(folder)
 
     # Iterate over the files and extract the EICs
     with mp.Pool(max(1, mp.cpu_count() - 2)) as pool:
-        pool.starmap(parse_mzxml_file, [(file, masses, retention_times, args.accuracy, args.cutoff, args.stack, args.pickle, args.title,
+        pool.starmap(parse_mzxml_file, [(file, masses, args.accuracy, args.cutoff, args.stack, args.pickle, args.title,
                                          args.normalize, args.title_separator)
                                         for file in files])
 
