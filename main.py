@@ -346,7 +346,7 @@ def main():
               'Reduction intermediate PksL KS4': [[288.1805]],
               'Dehydration intermediate PksL KS4': [[270.1700]],
               'Double extension intermediate PksL KS4': [[328.1755]],
-              'Dehydrated double extension intermediate PksL KS4': [[309.1577]],
+              'Dehydrated double extension intermediate PksL KS4': [[310.1649]],
               'Bacillibactin': [[883.2628]],
               }
 
