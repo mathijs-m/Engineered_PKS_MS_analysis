@@ -207,7 +207,7 @@ def plot_compound(sample_data, file_root, title_separator, stack_plot=False, set
             axs[plot_num][row_num].set_ylabel(y_axis_label, fontsize=10)
 
         # Set the title of the compound in the upper left corner of the graph and make it bold
-        axs[plot_num][row_num].set_title(' '+compound.capitalize(), fontsize=10, loc='left', pad=-10, fontweight='bold')
+        axs[plot_num][row_num].set_title(' '+compound, fontsize=10, loc='left', pad=-10, fontweight='bold')
         # Make a legend string that also mentions the maximum intensity of the EIC
         legend_strings = [f'{isomer:.4f} - {format_func(np.max(sample_data[compound][isomer]))}'
                           for isomer in sample_data[compound] if isomer != 'Retention time']
@@ -224,11 +224,12 @@ def plot_compound(sample_data, file_root, title_separator, stack_plot=False, set
         plt.setp(legend.get_title(), fontsize=8)
 
         fig.tight_layout()
-        fig.set_size_inches((num_rows * 2, num_cols * 7))
+        #fig.set_size_inches((num_rows * 2, num_cols * 7)) with num_rows = 5 and num_cols = 2 --> 10, 14
+        fig.set_size_inches((num_cols * 5, num_rows * 7/3))
 
     # Save the figure
 
-    plt.savefig(str(file_root) + '_unnormalized.png', dpi=300, bbox_inches='tight')
+    plt.savefig(str(file_root) + '_unnormalized.svg', dpi=300, bbox_inches='tight')
     plt.close()
 
 
@@ -308,6 +309,7 @@ def parse_mzxml_file(file, masses, accuracy, cutoff, stack_plot=False, use_pickl
     # Save the EICs to an Excel file
     #save_to_excel(sample_data, file_root)
     save_to_txt(sample_data, file_root)
+
     plot_compound(sample_data, file_root, title_separator, stack_plot, show_title, normalize)
 
 
@@ -334,28 +336,43 @@ def main():
     # Define the masses for which the EICs should be extracted
     mass_H = 1.007825032
     mass_Na = 22.989218
+    masses = {}
 
     masses = {'Intermediate ACP2': [[190.1074]],
-              'Intermediate ACP3/4': [[218.1387]],
+              'Intermediate ACP3-4': [[218.1387]],
+              'Intermediate ACP5': [[262.1649]],
+              'Intermediate ACP6': [[244.1543]],
+              'Keto extension intermediate PksL KS4': [[286.1649]],
+              'Reduction intermediate PksL KS4': [[288.1805]],
+              'Dehydration intermediate PksL KS4': [[270.1700]],
+              'Double extension intermediate PksL KS4': [[328.1755]],
+              'Dehydrated double extension intermediate PksL KS4': [[309.1577]],
+              'Bacillibactin': [[883.2628]],
+              }
+
+    masses.update({'Intermediate ACP10': [[310.2013]],
+              'Intermediate ACP11': [[336.2169]],
+              'Keto extension intermediate PksM8': [[378.2275]],
+              'Reduction intermediate PksM KS8': [[380.2431]],
+              'Dehydration intermediate PksM KS8': [[362.2326]],
+              'Double extension intermediate PksM KS8': [[420.2381]],
+              'Dehydrated double extension intermediate PksM KS8': [[402.2275]],
+              'Bacillibactin': [[883.2628]],
+              })
+
+    masses.update({'Intermediate ACP3-4': [[218.1387]],
               'Intermediate ACP5': [[262.1649]],
               'Intermediate ACP6': [[244.1543]],
               'Keto extension': [[286.1649]],
               'Reduction': [[288.1805]],
               'Dehydration': [[270.1700]],
-              'Double extension': [[327.1682]],
-              'Dehydrated double extension': [[309.1577]],
+              'Double extension': [[328.1682]],
+              'Dehydrated double extension': [[312.1805]],
+              'Double extension and arginylation intermediate PksL KS4': [[484.2766]],
+              'Double extension, reduction and arginylation intermediate PksL KS4': [[468.2817]],
+              'Double extension, dehydration and arginylation intermediate PksL KS4': [[452.2867]],
               'Bacillibactin': [[883.2628]],
-              }
-
-    masses = {'Intermediate ACP10': [[310.2013]],
-              'Intermediate ACP11': [[336.2169]],
-              'Keto extension': [[378.2275]],
-              'Reduction': [[380.2431]],
-              'Dehydration': [[362.2326]],
-              'Double extension': [[378.2275]],
-              'Dehydrated double extension': [[360.2170]],
-              'Bacillibactin': [[883.2628]],
-              }
+              })
 
     for compound in masses:
         mass = masses[compound][0][0]
