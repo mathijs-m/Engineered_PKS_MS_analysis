@@ -200,7 +200,7 @@ def plot_compound(sample_data, file_root, title_separator, stack_plot=False, set
         # Label the middle y-axis of the stacked plot with 'Normalized intensity'
         y_axis_label = 'Normalized intensity' if normalize else 'Intensity'
         if stack_plot:
-            if compound_id%row_length/(min(row_length, len(sample_data))//2) == 1:
+            if len(sample_data) == 1 or compound_id%row_length/(min(row_length, len(sample_data))//2) == 1:
                 axs[plot_num][row_num].set_ylabel(y_axis_label, fontsize=10)
         # Label the left y-axis of the non-stacked plot with 'Normalized intensity'
         else:
