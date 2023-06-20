@@ -265,7 +265,7 @@ def save_to_txt(sample_data, file_root):
         with open(str(file_root) + '/' + compound + '.txt', 'w') as f:
             # write to csv file
             sample_data[compound].to_csv(f, index=False, sep='\t')
-            
+
     # Additionally write all the data to a single text file
     with open(str(file_root) + '.txt', 'w') as f:
         for compound in sample_data:
@@ -337,7 +337,7 @@ def main():
     mass_H = 1.007825032
     mass_Na = 22.989218
     masses = {}
-
+    '''
     masses = {'Intermediate ACP2': [[190.1074]],
               'Intermediate ACP3-4': [[218.1387]],
               'Intermediate ACP5': [[262.1649]],
@@ -347,9 +347,9 @@ def main():
               'Dehydration intermediate PksL KS4': [[270.1700]],
               'Double extension intermediate PksL KS4': [[328.1755]],
               'Dehydrated double extension intermediate PksL KS4': [[310.1649]],
-              'Bacillibactin': [[883.2628]],
+              'Bacillibactin': [[883.2628]]
               }
-
+    '''
     masses.update({'Intermediate ACP10': [[310.2013]],
               'Intermediate ACP11': [[336.2169]],
               'Keto extension intermediate PksM8': [[378.2275]],
@@ -357,22 +357,16 @@ def main():
               'Dehydration intermediate PksM KS8': [[362.2326]],
               'Double extension intermediate PksM KS8': [[420.2381]],
               'Dehydrated double extension intermediate PksM KS8': [[402.2275]],
-              'Bacillibactin': [[883.2628]],
+              'Bacillibactin': [[883.2628]]
               })
-
-    masses.update({'Intermediate ACP3-4': [[218.1387]],
-              'Intermediate ACP5': [[262.1649]],
-              'Intermediate ACP6': [[244.1543]],
-              'Keto extension': [[286.1649]],
-              'Reduction': [[288.1805]],
-              'Dehydration': [[270.1700]],
-              'Double extension': [[328.1682]],
-              'Dehydrated double extension': [[312.1805]],
+    '''
+    masses.update({'Dehydrated reduced double extension intermediate PksL KS4': [[312.1805]],
               'Double extension and arginylation intermediate PksL KS4': [[484.2766]],
               'Double extension, reduction and arginylation intermediate PksL KS4': [[468.2817]],
               'Double extension, dehydration and arginylation intermediate PksL KS4': [[452.2867]],
               'Bacillibactin': [[883.2628]],
               })
+    '''
 
     for compound in masses:
         mass = masses[compound][0][0]
