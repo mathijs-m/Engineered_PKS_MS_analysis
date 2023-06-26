@@ -119,7 +119,7 @@ def plot_compound(sample_data, file_root, retention_times, title_separator, stac
         num_rows = min(len(sample_data), row_length)
         num_cols = (len(sample_data)-1)//row_length+1
         fig, axs = plt.subplots(num_rows, num_cols, figsize=fig_size, squeeze=False, sharex=True)
-        colors = cmocean.cm.haline(
+        colors = cmocean.cm.thermal(
             np.linspace(0, 0.9, max([len(sample_data[compound].columns) for compound in compounds])))
     else:
         num_rows = 1
@@ -221,7 +221,8 @@ def plot_compound(sample_data, file_root, retention_times, title_separator, stac
             axs[plot_num][row_num].set_ylabel(y_axis_label, fontsize=10)
 
         # Set the title of the compound in the upper left corner of the graph and make it bold
-        axs[plot_num][row_num].set_title(' '+compound.capitalize(), fontsize=10, loc='left', pad=-10, fontweight='bold')
+        axs[plot_num][row_num].set_title(' '+compound.capitalize() if len(compound)>4 else compound, fontsize=10,
+                                         loc='left', pad=-10, fontweight='bold')
         # Make a legend string that also mentions the maximum intensity of the EIC
         legend_strings = [f'{isomer:.4f} - {format_func(np.max(sample_data[compound][isomer]))}'
                           for isomer in sample_data[compound] if isomer != 'Retention time']
@@ -310,13 +311,15 @@ def parse_mzxml_file(file, masses, retention_times, accuracy, cutoff, stack_plot
 
     # Save the EICs to a text file
     sample_data = dict()
+    numeric_to_roman = {'1': 'I', '2': 'II', '3': 'III', '4': 'IV', '5': 'V', 'oocydin': 'Oocydin'}
     for compound in masses:
         compound_data = pd.DataFrame()
         compound_data['Retention time'] = eics[masses[compound][0][0]][0]
         for isomer in masses[compound]:
             for adduct_mass in isomer:
                 compound_data[adduct_mass] = eics[adduct_mass][1]
-        sample_data[compound] = compound_data
+        sample_data[numeric_to_roman[compound]] = compound_data
+        retention_times[numeric_to_roman[compound]] = retention_times[compound]
 
     print('Saving EICs to text files')
     # Save the EICs to an Excel file
@@ -347,16 +350,6 @@ def main():
 
     # Define the masses for which the EICs should be extracted
     masses = {'1': [[445.1624, 462.1889], [459.178, 476.2045], [363.1205, 380.147]],
-              '2lin': [[487.173, 504.1995], [501.1886, 518.2151], [405.1311, 422.1576]],
-              '2cyc': [[469.1624, 486.1889], [483.178, 500.2045], [387.1205, 404.147]],
-              '3lin': [[529.1835, 546.21], [543.1992, 560.2257], [447.1417, 464.1682]],
-              '3cyc': [[511.173, 528.1995], [525.1886, 542.2151], [429.1311, 446.1576]],
-              '4lin': [[531.1992, 548.2257], [545.2148, 562.2413], [449.1573, 466.1838]],
-              '4cyc': [[513.1886, 530.2151], [527.2042, 544.2308], [431.1467, 448.1732]],
-              '5lin': [[513.1886, 530.2151], [527.2043, 544.2308], [431.1467, 448.1732]],
-              '5cyc': [[495.178, 512.2046], [509.1937, 526.2202], [413.1362, 430.1627]],
-              'oocydin': [[471.1780, 488.2045], [555.2355, 572.2621], [567.2355, 584.2621], [553.2199, 570.2464]]} # Oocydin A, B, C, haterumalide B
-    masses = {'1': [[445.1624, 462.1889], [459.178, 476.2045], [363.1205, 380.147]],
               '2': [[469.1624, 486.1889], [483.178, 500.2045], [387.1205, 404.147]],
               '3': [[511.173, 528.1995], [525.1886, 542.2151], [429.1311, 446.1576]],
               '4': [[513.1886, 530.2151], [527.2042, 544.2308], [431.1467, 448.1732]],
@@ -364,13 +357,9 @@ def main():
               'oocydin': [[471.1780, 488.2045], [555.2355, 572.2621], [567.2355, 584.2621], [553.2199, 570.2464]]} # Oocydin A, B, C, haterumalide B
 
     retention_times = {'1': [[12.02], [12.02], [10.28]],
-              '2lin': [[14.82], [16.72], [12.55]],
               '2': [[14.82], [16.72], [12.55]],
-              '3lin': [[], [], []],
               '3': [[11.88], [11.77, 14.89], [12.81, 9.97]],
-              '4lin': [[], [], []],
               '4': [[12.80, 12.75], [], [10.76]],
-              '5lin': [[], [], []],
               '5': [[14.59], [14.59], [12.55]],
               'oocydin': [[14.10], [], [14.10], []]}
     # Get the list of mzXML files
