@@ -14,6 +14,7 @@ import argparse
 import multiprocessing as mp
 import pickle as pkl
 import os
+import re
 
 def get_mzxml_files(folder):
     '''
@@ -62,11 +63,21 @@ def extract_eic_for_mass(mzxml_object, mass_list, accuracy = 10e-6, cutoff=1e3, 
                 the range of intensities of the second isotope (Cl37) to the first isotope (Cl35) that are accepted
     :return:    A dictionary with the masses as keys and the EICs as values
     '''
+
+    # The data for the lacunalides is collected with data-dependent MS2, but we are interested in the MS1 data
+    # Therefore, we need to extract the MS1 data from the MS2 data
     max_id = int(mzxml_object.time[1e3]['num'])
-    spectra = [mzxml_object.get_by_id(str(id)) for id in range(1, max_id)]
+    spectra = list()
+    for id in range(1, max_id-1):
+        try:
+            spectrum = mzxml_object.get_by_index(id)
+            if spectrum['msLevel'] == 1:
+                spectra.append(spectrum)
+        except IndexError:
+            pass
     eics = dict()
 
-    non_chlorinated_masses = [mass for compound in ['1'] for adduct_masses in mass_list[compound] for mass in adduct_masses]
+    # Iterate over the spectra and save the intensity and retention time for each mass
     mass_list = set(adduct_mass for compound in mass_list for isomer in mass_list[compound] for adduct_mass in isomer)
     for mass in mass_list:
         eics[mass] = np.zeros((2,max_id-1), dtype=np.float32)
@@ -79,9 +90,7 @@ def extract_eic_for_mass(mzxml_object, mass_list, accuracy = 10e-6, cutoff=1e3, 
             for mass in mass_list:
                 eics[mass][0, spectrum_id] = spectrum['retentionTime']
                 if intensity > cutoff and abs(experimental_mass-mass) < accuracy*experimental_mass:
-                    if check_isotope_pattern(spectrum, peak_id, delta_mass, isotope_intensity_range, accuracy) or \
-                        mass in non_chlorinated_masses:
-                        eics[mass][1, spectrum_id] = intensity
+                    eics[mass][1, spectrum_id] = intensity
     return eics
 
 
@@ -98,7 +107,7 @@ def format_func(value, pos=None):
 
 
 def plot_compound(sample_data, file_root, retention_times, title_separator, stack_plot=False, set_title=False, normalize = True,
-                  row_length=6):
+                  row_length=4):
     '''
     This function plots the EICs for a compound
     :param sample_data: The dictionary of dataframes with data for the sample
@@ -283,7 +292,7 @@ def save_to_txt(sample_data, file_root):
     # Additionally write all the data to a single text file
     with open(str(file_root) + '.txt', 'w') as f:
         for compound in sample_data:
-            f.write('"' + compound + '"\n')
+            f.write('"' + re.sub(r'[^\x00-\x7F]', '', compound) + '"\n')
             f.write(sample_data[compound].to_string(index=False))
             f.write('\n\n')
 
@@ -298,7 +307,7 @@ def parse_mzxml_file(file, masses, retention_times, accuracy, cutoff, stack_plot
                 eics = pkl.load(f)
             print('...done')
         except FileNotFoundError:
-            mzxml_object = mzxml.MzXML(str(file.resolve()))
+            mzxml_object = mzxml.read(str(file.resolve()), use_index=True)
             eics = extract_eic_for_mass(mzxml_object, masses, accuracy, cutoff)
             with open(str(file.parent / file.stem) + '.pkl', 'wb') as f:
                 pkl.dump(eics, f)
@@ -311,15 +320,13 @@ def parse_mzxml_file(file, masses, retention_times, accuracy, cutoff, stack_plot
 
     # Save the EICs to a text file
     sample_data = dict()
-    numeric_to_roman = {'1': 'I', '2': 'II', '3': 'III', '4': 'IV', '5': 'V', 'oocydin': 'Oocydin'}
     for compound in masses:
         compound_data = pd.DataFrame()
         compound_data['Retention time'] = eics[masses[compound][0][0]][0]
         for isomer in masses[compound]:
             for adduct_mass in isomer:
                 compound_data[adduct_mass] = eics[adduct_mass][1]
-        sample_data[numeric_to_roman[compound]] = compound_data
-        retention_times[numeric_to_roman[compound]] = retention_times[compound]
+        sample_data[compound] = compound_data
 
     print('Saving EICs to text files')
     # Save the EICs to an Excel file
@@ -349,19 +356,17 @@ def main():
     folder = Path(args.folder)
 
     # Define the masses for which the EICs should be extracted
-    masses = {'1': [[445.1624, 462.1889], [459.178, 476.2045], [363.1205, 380.147]],
-              '2': [[469.1624, 486.1889], [483.178, 500.2045], [387.1205, 404.147]],
-              '3': [[511.173, 528.1995], [525.1886, 542.2151], [429.1311, 446.1576]],
-              '4': [[513.1886, 530.2151], [527.2042, 544.2308], [431.1467, 448.1732]],
-              '5': [[495.178, 512.2046], [509.1937, 526.2202], [413.1362, 430.1627]],
-              'oocydin': [[471.1780, 488.2045], [555.2355, 572.2621], [567.2355, 584.2621], [553.2199, 570.2464]]} # Oocydin A, B, C, haterumalide B
+    masses = {'WT': [[971.7029], [957.6873]],
+              'Δlcn14-15': [[899.6454], [885.6298]],
+              'Δlcn21-22': [[883.6505], [869.6349]],
+              'Δlcn20-23': [[795.5981], [781.5824]],
+              'Δlcn17-24': [[609.4725], [595.4568]],
+              'Δlcn14-15, 17-24': [[537.4158], [523.4001]],
+              'Δlcn14-15, 21-22': [[811.5930], [797.5773]],
+              'Δlcn14-15, 20-23': [[723.5406], [709.5249]],
+              }
 
-    retention_times = {'1': [[12.02], [12.02], [10.28]],
-              '2': [[14.82], [16.72], [12.55]],
-              '3': [[11.88], [11.77, 14.89], [12.81, 9.97]],
-              '4': [[12.80, 12.75], [], [10.76]],
-              '5': [[14.59], [14.59], [12.55]],
-              'oocydin': [[14.10], [], [14.10], []]}
+    retention_times = {key: [] for key in masses.keys()}
     # Get the list of mzXML files
     files = get_mzxml_files(folder)
 
