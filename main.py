@@ -121,7 +121,7 @@ def plot_compound(sample_data, file_root, retention_times, title_separator, stac
     :return:    None
     '''
     compounds = list(sample_data.keys())
-    time_range = [9, 17]
+    time_range = [12, 18]
     fig_size = (36, 18)
 
     if stack_plot:
@@ -248,7 +248,7 @@ def plot_compound(sample_data, file_root, retention_times, title_separator, stac
         plt.setp(legend.get_title(), fontsize=8)
 
         fig.tight_layout()
-        fig.set_size_inches((num_rows * 2, num_cols * 15))
+        fig.set_size_inches((num_cols * 5, num_rows * 7/3))
 
     # Save the figure
 
