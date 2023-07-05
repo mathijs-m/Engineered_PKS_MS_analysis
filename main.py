@@ -124,6 +124,15 @@ def plot_compound(sample_data, file_root, retention_times, title_separator, stac
     time_range = [12, 18]
     fig_size = (36, 18)
 
+    mutant_to_compound = {'WT': '6, 7',
+               'Δlcn14-15': '8, 9',
+               'Δlcn21-22': '10, 11',
+               'Δlcn20-23': '12, 13',
+               'Δlcn17-24': '14, 15',
+               'Δlcn14-15, 21-22': '16, 17',
+               'Δlcn14-15, 17-24': '18, 19',
+               'Δlcn14-15, 20-23': '20, 21'}
+
     if stack_plot:
         num_rows = min(len(sample_data), row_length)
         num_cols = (len(sample_data)-1)//row_length+1
@@ -230,7 +239,7 @@ def plot_compound(sample_data, file_root, retention_times, title_separator, stac
             axs[plot_num][row_num].set_ylabel(y_axis_label, fontsize=10)
 
         # Set the title of the compound in the upper left corner of the graph and make it bold
-        axs[plot_num][row_num].set_title(' '+compound.capitalize() if len(compound)>4 else compound, fontsize=10,
+        axs[plot_num][row_num].set_title(' '+mutant_to_compound[compound].capitalize(), fontsize=10,
                                          loc='left', pad=-10, fontweight='bold')
         # Make a legend string that also mentions the maximum intensity of the EIC
         legend_strings = [f'{isomer:.4f} - {format_func(np.max(sample_data[compound][isomer]))}'
