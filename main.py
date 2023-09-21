@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from pyteomics import mzxml, auxiliary
 from pathlib import Path
+from scipy.integrate import simpson
 from matplotlib import pyplot as plt
 from matplotlib.ticker import FormatStrFormatter, ScalarFormatter
 import cmocean
@@ -15,6 +16,8 @@ import multiprocessing as mp
 import pickle as pkl
 import os
 import re
+from collections import defaultdict
+
 
 def get_mzxml_files(folder):
     '''
@@ -92,6 +95,21 @@ def extract_eic_for_mass(mzxml_object, mass_list, accuracy = 10e-6, cutoff=1e3, 
                 if intensity > cutoff and abs(experimental_mass-mass) < accuracy*experimental_mass:
                     eics[mass][1, spectrum_id] = intensity
     return eics
+
+
+def get_auc_for_eic(eic, retention_time, peak_width=0.1):
+    '''
+    This function calculates the area under the curve for a peak at retention_time and with a peak width of peak_width
+    Because the peak is non-linear, use the simpson rule to calculate the AUC
+    :param eic: The EIC for which the AUC should be calculated at retention_time
+    :param retention_time:  The retention time at which the AUC should be calculated
+    :param peak_width:  The width of the peak for which the AUC should be calculated in minutes
+    :return:    The AUC for the peak
+    '''
+    peak = eic[:, (eic[0, :] > retention_time - peak_width) & (eic[0, :] < retention_time + peak_width)]
+    if len(peak[0, :]) < 2:
+        return 0
+    return simpson(y=peak[1, :], x=peak[0, :])
 
 
 def format_func(value, pos=None):
@@ -329,19 +347,36 @@ def parse_mzxml_file(file, masses, retention_times, accuracy, cutoff, stack_plot
 
     # Save the EICs to a text file
     sample_data = dict()
+    aucs = dict()
     for compound in masses:
+        if compound not in aucs:
+            aucs[compound] = dict()
         compound_data = pd.DataFrame()
         compound_data['Retention time'] = eics[masses[compound][0][0]][0]
-        for isomer in masses[compound]:
-            for adduct_mass in isomer:
+        for isomer_index, isomer in enumerate(masses[compound]):
+            if isomer_index not in aucs[compound]:
+                aucs[compound][isomer_index] = list()
+            for adduct_index, adduct_mass in enumerate(isomer):
                 compound_data[adduct_mass] = eics[adduct_mass][1]
-        sample_data[compound] = compound_data
+                try:
+                    aucs[compound][isomer_index].append(get_auc_for_eic(eics[adduct_mass], retention_times[compound][isomer_index][0]))
+                except IndexError:
+                    print(f"AUC calculation error in {file}: {compound} - {isomer}, {adduct_index}")
 
     print('Saving EICs to text files')
     # Save the EICs to an Excel file
     #save_to_excel(sample_data, file_root)
-    save_to_txt(sample_data, file_root)
-    plot_compound(sample_data, file_root, retention_times, title_separator, stack_plot, show_title, normalize)
+    #save_to_txt(sample_data, file_root)
+    #plot_compound(sample_data, file_root, retention_times, title_separator, stack_plot, show_title, normalize)
+
+    # Save the AUCs to a tab-separated txt file. Organize per compound, then per isomer, then per adduct
+    with open(str(file_root) + '_aucs.txt', 'w') as f:
+        for compound in aucs:
+            f.write(re.sub(r'[^\x00-\x7F]', '', compound) + '\t')
+            for isomer in aucs[compound]:
+                for adduct_index, adduct in enumerate(aucs[compound][isomer]):
+                    f.write(str(masses[compound][isomer][adduct_index]) + '\t' + str(adduct) + '\n\t')
+            f.write('\n')
 
 
 def main():
@@ -375,7 +410,15 @@ def main():
               'Δlcn14-15, 20-23': [[723.5406], [709.5249]],
               }
 
-    retention_times = {key: [] for key in masses.keys()}
+    retention_times = {'WT': [[14.72], [14.29]],
+              'Δlcn14-15': [[13.66], [13.52]],
+              'Δlcn21-22': [[14.67], [14.63]],
+              'Δlcn20-23': [[14.82], [15.12]],
+              'Δlcn17-24': [[15.19], [14.88]],
+              'Δlcn14-15, 17-24': [[15.70], [15.25]],
+              'Δlcn14-15, 21-22': [[14.95], [14.61]],
+              'Δlcn14-15, 20-23': [[15.38], [15.45]],
+              }
     # Get the list of mzXML files
     files = get_mzxml_files(folder)
 
