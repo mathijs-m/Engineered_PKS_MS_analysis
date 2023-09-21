@@ -351,9 +351,9 @@ def parse_mzxml_file(file, masses, retention_times, accuracy, cutoff, stack_plot
 
     print('Saving EICs to text files')
     # Save the EICs to an Excel file
-    #save_to_excel(sample_data, file_root)
-    #save_to_txt(sample_data, file_root)
-    #plot_compound(sample_data, file_root, retention_times, title_separator, stack_plot, show_title, normalize)
+    save_to_excel(sample_data, file_root)
+    save_to_txt(sample_data, file_root)
+    plot_compound(sample_data, file_root, retention_times, title_separator, stack_plot, show_title, normalize)
 
     # Save the AUCs to a tab-separated txt file. Organize per compound, then per isomer, then per adduct
     with open(str(file_root) + '_aucs.txt', 'w') as f:
